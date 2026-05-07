@@ -32,6 +32,18 @@ curl -fsSL https://raw.githubusercontent.com/insanerask77/k8s-setup/main/install
 curl -fsSL https://raw.githubusercontent.com/insanerask77/k8s-setup/main/install.sh | bash -s -- --tools kubectl,helm,k9s
 ```
 
+### Usar a través de un proxy HTTP/HTTPS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/insanerask77/k8s-setup/main/install.sh | bash -s -- --proxy http://proxy.empresa.com:3128
+
+# Con autenticación
+curl -fsSL https://raw.githubusercontent.com/insanerask77/k8s-setup/main/install.sh | bash -s -- --proxy http://usuario:contraseña@proxy.empresa.com:3128
+
+# Combinado con otras flags
+curl -fsSL https://raw.githubusercontent.com/insanerask77/k8s-setup/main/install.sh | bash -s -- --auto --proxy http://proxy.empresa.com:3128
+```
+
 ---
 
 ## Menú interactivo
@@ -99,13 +111,16 @@ El script detecta si faltan `curl`, `tar` o `gzip` e **los instala automáticame
 |---|---|
 | `--auto` / `-a` | Instala todas las herramientas sin interacción |
 | `--tools x,y,z` | Instala solo las herramientas listadas |
+| `--proxy <url>` | Enruta todas las descargas a través del proxy indicado |
 | `--help` / `-h` | Muestra la ayuda |
 
-### Variable de entorno
+### Variables de entorno
 
 | Variable | Default | Descripción |
 |---|---|---|
 | `INSTALL_DIR` | `/usr/local/bin` | Directorio donde se instalan los binarios |
+
+> **Entornos con proxy:** el flag `--proxy` configura automáticamente `http_proxy`, `https_proxy`, `HTTP_PROXY` y `HTTPS_PROXY`, por lo que el proxy aplica también a las descargas internas del instalador de helm y a los package managers del sistema.
 
 ---
 

@@ -19,6 +19,7 @@ trap 'rm -rf "$TMPDIR_WORK"' EXIT
 TOOLS_ALL=(kubectl helm k9s kubectx kubens kubectl-aliases)
 TOOLS_SELECTED=()
 AUTO_MODE=false
+PROXY_URL=""
 ARCH=""
 OS_ID=""
 OS_LIKE=""
@@ -28,6 +29,7 @@ SUDO_CMD=""
 # ─────────────────────────────────────────────
 # HELPERS DE LOG
 # ─────────────────────────────────────────────
+_curl()   { curl ${PROXY_URL:+-x "$PROXY_URL"} "$@"; }
 log()     { echo -e "${BLUE}==>${RESET} $*"; }
 success() { echo -e "${GREEN}✔${RESET} $*"; }
 warn()    { echo -e "${YELLOW}⚠${RESET} $*"; }
@@ -62,17 +64,26 @@ parse_args() {
         shift
         IFS=',' read -ra TOOLS_SELECTED <<< "${1:-}"
         ;;
+      --proxy)
+        shift
+        PROXY_URL="${1:-}"
+        ;;
+      --proxy=*)
+        PROXY_URL="${1#--proxy=}"
+        ;;
       --help|-h)
         echo ""
         echo -e "${BOLD}Uso:${RESET}"
         echo "  curl -fsSL <url> | bash"
         echo "  curl -fsSL <url> | bash -s -- --auto"
         echo "  curl -fsSL <url> | bash -s -- --tools kubectl,helm,k9s"
+        echo "  curl -fsSL <url> | bash -s -- --proxy http://proxy.ejemplo.com:3128"
         echo ""
         echo -e "${BOLD}Flags:${RESET}"
-        echo "  --auto, -a          Instala todas las herramientas sin interacción"
-        echo "  --tools k1,k2,...   Instala solo las herramientas especificadas"
-        echo "  --help, -h          Muestra esta ayuda"
+        echo "  --auto, -a                Instala todas las herramientas sin interacción"
+        echo "  --tools k1,k2,...         Instala solo las herramientas especificadas"
+        echo "  --proxy <url>             Usa proxy HTTP/HTTPS para todas las descargas"
+        echo "  --help, -h                Muestra esta ayuda"
         echo ""
         echo -e "${BOLD}Herramientas disponibles:${RESET}"
         echo "  kubectl, helm, k9s, kubectx, kubens, kubectl-aliases"
@@ -400,7 +411,7 @@ show_menu() {
 
 github_latest_tag() {
   local repo="$1"
-  curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+  _curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
     | grep '"tag_name"' \
     | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
 }
@@ -416,8 +427,8 @@ install_binary() {
 install_kubectl() {
   log "Instalando kubectl..."
   local version
-  version=$(curl -fsSL "https://dl.k8s.io/release/stable.txt")
-  curl -fsSL "https://dl.k8s.io/release/${version}/bin/linux/${ARCH}/kubectl" \
+  version=$(_curl -fsSL "https://dl.k8s.io/release/stable.txt")
+  _curl -fsSL "https://dl.k8s.io/release/${version}/bin/linux/${ARCH}/kubectl" \
     -o "${TMPDIR_WORK}/kubectl"
   install_binary "${TMPDIR_WORK}/kubectl" kubectl
   success "kubectl ${version} instalado"
@@ -426,7 +437,7 @@ install_kubectl() {
 # ── helm ─────────────────────────────────────
 install_helm() {
   log "Instalando helm..."
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+  _curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
     | HELM_INSTALL_DIR="${INSTALL_DIR}" USE_SUDO="${SUDO_CMD:+true}" bash
   success "helm $(helm version --short 2>/dev/null || echo '') instalado"
 }
@@ -440,7 +451,7 @@ install_k9s() {
   [[ "$ARCH" == "amd64" ]] && arch_k9s="amd64"
   [[ "$ARCH" == "arm64" ]] && arch_k9s="arm64"
 
-  curl -fsSL \
+  _curl -fsSL \
     "https://github.com/derailed/k9s/releases/download/${version}/k9s_Linux_${arch_k9s}.tar.gz" \
     | tar xz -C "${TMPDIR_WORK}" k9s
   install_binary "${TMPDIR_WORK}/k9s" k9s
@@ -454,10 +465,10 @@ install_kubectx() {
   version=$(github_latest_tag "ahmetb/kubectx")
   local ver_no_v="${version#v}"
 
-  curl -fsSL \
+  _curl -fsSL \
     "https://github.com/ahmetb/kubectx/releases/download/${version}/kubectx_${version}_linux_${ARCH}.tar.gz" \
     | tar xz -C "${TMPDIR_WORK}" kubectx 2>/dev/null \
-    || curl -fsSL \
+    || _curl -fsSL \
     "https://github.com/ahmetb/kubectx/releases/download/${version}/kubectx_v${ver_no_v}_linux_${ARCH}.tar.gz" \
     | tar xz -C "${TMPDIR_WORK}" kubectx
 
@@ -471,10 +482,10 @@ install_kubens() {
   version=$(github_latest_tag "ahmetb/kubectx")
   local ver_no_v="${version#v}"
 
-  curl -fsSL \
+  _curl -fsSL \
     "https://github.com/ahmetb/kubectx/releases/download/${version}/kubens_${version}_linux_${ARCH}.tar.gz" \
     | tar xz -C "${TMPDIR_WORK}" kubens 2>/dev/null \
-    || curl -fsSL \
+    || _curl -fsSL \
     "https://github.com/ahmetb/kubectx/releases/download/${version}/kubens_v${ver_no_v}_linux_${ARCH}.tar.gz" \
     | tar xz -C "${TMPDIR_WORK}" kubens
 
@@ -495,7 +506,7 @@ detect_shell_rc() {
 
 install_kubectl_aliases() {
   log "Instalando kubectl-aliases..."
-  curl -fsSL \
+  _curl -fsSL \
     "https://raw.githubusercontent.com/ahmetb/kubectl-aliases/master/.kubectl_aliases" \
     -o "$HOME/.kubectl_aliases"
 
@@ -593,6 +604,13 @@ verify_installations() {
 # ─────────────────────────────────────────────
 main() {
   parse_args "$@"
+  if [[ -n "$PROXY_URL" ]]; then
+    export http_proxy="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export HTTPS_PROXY="$PROXY_URL"
+    log "Proxy configurado: ${BOLD}${PROXY_URL}${RESET}"
+  fi
   banner
   detect_os
   detect_arch
