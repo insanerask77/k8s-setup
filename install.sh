@@ -438,8 +438,9 @@ install_kubectl() {
 install_helm() {
   log "Instalando helm..."
   _curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
-    | HELM_INSTALL_DIR="${INSTALL_DIR}" USE_SUDO="${SUDO_CMD:+true}" bash
-  success "helm $(helm version --short 2>/dev/null || echo '') instalado"
+    | PATH="${INSTALL_DIR}:${PATH}" HELM_INSTALL_DIR="${INSTALL_DIR}" USE_SUDO="${SUDO_CMD:+true}" bash \
+    || { error "Falló el instalador de helm"; return 1; }
+  success "helm $("${INSTALL_DIR}/helm" version --short 2>/dev/null || echo '') instalado"
 }
 
 # ── k9s ──────────────────────────────────────
@@ -459,37 +460,36 @@ install_k9s() {
 }
 
 # ── kubectx + kubens ─────────────────────────
+# kubectx usa x86_64 en sus assets, no amd64
+_kubectx_arch() { [[ "$ARCH" == "amd64" ]] && echo "x86_64" || echo "$ARCH"; }
+
 install_kubectx() {
   log "Instalando kubectx..."
-  local version
+  local version arch_ctx
   version=$(github_latest_tag "ahmetb/kubectx")
-  local ver_no_v="${version#v}"
+  arch_ctx=$(_kubectx_arch)
 
   _curl -fsSL \
-    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubectx_${version}_linux_${ARCH}.tar.gz" \
-    | tar xz -C "${TMPDIR_WORK}" kubectx 2>/dev/null \
-    || _curl -fsSL \
-    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubectx_v${ver_no_v}_linux_${ARCH}.tar.gz" \
-    | tar xz -C "${TMPDIR_WORK}" kubectx
+    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubectx_${version}_linux_${arch_ctx}.tar.gz" \
+    | tar xz -C "${TMPDIR_WORK}" kubectx \
+    || { error "No se pudo descargar kubectx ${version}"; return 1; }
 
-  install_binary "${TMPDIR_WORK}/kubectx" kubectx
+  install_binary "${TMPDIR_WORK}/kubectx" kubectx || return 1
   success "kubectx ${version} instalado"
 }
 
 install_kubens() {
   log "Instalando kubens..."
-  local version
+  local version arch_ctx
   version=$(github_latest_tag "ahmetb/kubectx")
-  local ver_no_v="${version#v}"
+  arch_ctx=$(_kubectx_arch)
 
   _curl -fsSL \
-    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubens_${version}_linux_${ARCH}.tar.gz" \
-    | tar xz -C "${TMPDIR_WORK}" kubens 2>/dev/null \
-    || _curl -fsSL \
-    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubens_v${ver_no_v}_linux_${ARCH}.tar.gz" \
-    | tar xz -C "${TMPDIR_WORK}" kubens
+    "https://github.com/ahmetb/kubectx/releases/download/${version}/kubens_${version}_linux_${arch_ctx}.tar.gz" \
+    | tar xz -C "${TMPDIR_WORK}" kubens \
+    || { error "No se pudo descargar kubens ${version}"; return 1; }
 
-  install_binary "${TMPDIR_WORK}/kubens" kubens
+  install_binary "${TMPDIR_WORK}/kubens" kubens || return 1
   success "kubens ${version} instalado"
 }
 
