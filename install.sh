@@ -206,45 +206,126 @@ ensure_whiptail() {
 # MENÚ INTERACTIVO
 # ─────────────────────────────────────────────
 
-# Menú fallback puro en bash con checkboxes ASCII
+# Descripciones por herramienta
+tool_desc() {
+  case "$1" in
+    kubectl)         echo "CLI oficial de Kubernetes" ;;
+    helm)            echo "Package manager para clusters" ;;
+    k9s)             echo "TUI para gestionar workloads" ;;
+    kubectx)         echo "Cambiar entre contextos K8s" ;;
+    kubens)          echo "Cambiar entre namespaces" ;;
+    kubectl-aliases) echo "~200 aliases de productividad" ;;
+    *)               echo "" ;;
+  esac
+}
+
+# Íconos por herramienta
+tool_icon() {
+  case "$1" in
+    kubectl)         echo "⎈" ;;
+    helm)            echo "⛵" ;;
+    k9s)             echo "🐶" ;;
+    kubectx)         echo "🔀" ;;
+    kubens)          echo "📦" ;;
+    kubectl-aliases) echo "⚡" ;;
+    *)               echo "•" ;;
+  esac
+}
+
+# Construye una barra de progreso de selección  ████░░░░
+_progress_bar() {
+  local selected=$1 total=$2 width=20
+  local filled=$(( selected * width / (total > 0 ? total : 1) ))
+  local empty=$(( width - filled ))
+  local bar=""
+  for ((i=0; i<filled; i++)); do bar+="█"; done
+  for ((i=0; i<empty;  i++)); do bar+="░"; done
+  echo "$bar"
+}
+
+# Menú bash puro rediseñado
 show_menu_bash() {
   local -a items=("$@")
-  local -a selected=()
   local -a state=()
   local count=${#items[@]}
 
-  # inicializar todos como seleccionados
-  for ((i=0; i<count; i++)); do
-    state[$i]=1
-  done
-
+  for ((i=0; i<count; i++)); do state[$i]=1; done
   local cursor=0
 
-  # Función para dibujar el menú
+  # Ancho fijo del panel
+  local W=56
+
+  _pad() {
+    # _pad "texto" ancho  →  rellena con espacios hasta ancho (sin códigos ANSI)
+    local text="$1" width="$2"
+    # longitud visible (sin escapes ANSI)
+    local visible
+    visible=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
+    local len=${#visible}
+    local pad=$(( width - len ))
+    printf '%s' "$text"
+    for ((p=0; p<pad; p++)); do printf ' '; done
+  }
+
   draw_menu() {
     clear
-    echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${RESET}"
-    echo -e "${BOLD}  Seleccionar herramientas a instalar${RESET}"
-    echo -e "${CYAN}═══════════════════════════════════════════════${RESET}"
-    echo -e "  ${YELLOW}↑/↓${RESET} Mover  ${YELLOW}SPACE${RESET} Toggle  ${YELLOW}a${RESET} Todo/Nada  ${YELLOW}ENTER${RESET} Instalar"
-    echo -e "${CYAN}───────────────────────────────────────────────${RESET}"
+    # ── Cabecera ──────────────────────────────────────
+    echo -e "${CYAN}${BOLD}  ╔══════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}  ║${RESET}  ${BOLD}⎈  k8s-setup${RESET} — Seleccionar herramientas        ${CYAN}${BOLD}║${RESET}"
+    echo -e "${CYAN}${BOLD}  ╠══════════════════════════════════════════════════╣${RESET}"
+
+    # ── Filas de herramientas ─────────────────────────
     for ((i=0; i<count; i++)); do
-      local mark="[ ]"
-      [[ ${state[$i]} -eq 1 ]] && mark="[${GREEN}✔${RESET}]"
-      if [[ $i -eq $cursor ]]; then
-        echo -e "  ${BOLD}${BLUE}▶ ${mark} ${items[$i]}${RESET}"
+      local tool="${items[$i]}"
+      local icon; icon=$(tool_icon "$tool")
+      local desc; desc=$(tool_desc "$tool")
+
+      # Checkbox e indicador de cursor
+      local checkbox cursor_mark=" "
+      if [[ ${state[$i]} -eq 1 ]]; then
+        checkbox="${GREEN}${BOLD} ✔ ${RESET}"
       else
-        echo -e "    ${mark} ${items[$i]}"
+        checkbox="${RESET}   "
       fi
+
+      if [[ $i -eq $cursor ]]; then
+        cursor_mark="${YELLOW}❯${RESET}"
+        local row_color="${BOLD}"
+        local name_color="${YELLOW}${BOLD}"
+      else
+        cursor_mark=" "
+        local row_color=""
+        local name_color="${CYAN}"
+      fi
+
+      # Nombre (12 chars fijo) + descripción
+      local name_pad
+      printf -v name_pad "%-13s" "$tool"
+
+      echo -e "${CYAN}${BOLD}  ║${RESET} ${cursor_mark}${checkbox}${icon} ${name_color}${name_pad}${RESET}${row_color}${desc}$(
+        # relleno hasta el borde derecho
+        local visible_len=$(( 1 + 3 + 2 + 1 + 13 + ${#desc} ))
+        local pad=$(( W - visible_len - 1 ))
+        for ((p=0; p<pad; p++)); do printf ' '; done
+      )${RESET} ${CYAN}${BOLD}║${RESET}"
     done
-    echo -e "${CYAN}───────────────────────────────────────────────${RESET}"
+
+    # ── Barra de estado ───────────────────────────────
+    echo -e "${CYAN}${BOLD}  ╠══════════════════════════════════════════════════╣${RESET}"
+
     local sel_count=0
     for s in "${state[@]}"; do [[ $s -eq 1 ]] && ((sel_count++)) || true; done
-    echo -e "  ${sel_count}/${count} seleccionadas"
+    local bar; bar=$(_progress_bar "$sel_count" "$count")
+
+    echo -e "${CYAN}${BOLD}  ║${RESET}  ${GREEN}${bar}${RESET}  ${BOLD}${sel_count}/${count}${RESET} seleccionadas                  ${CYAN}${BOLD}║${RESET}"
+
+    # ── Controles ─────────────────────────────────────
+    echo -e "${CYAN}${BOLD}  ╠══════════════════════════════════════════════════╣${RESET}"
+    echo -e "${CYAN}${BOLD}  ║${RESET}  ${YELLOW}↑↓${RESET} Mover  ${YELLOW}SPACE${RESET} Toggle  ${YELLOW}A${RESET} Todo/Nada  ${YELLOW}ENTER${RESET} Instalar  ${CYAN}${BOLD}║${RESET}"
+    echo -e "${CYAN}${BOLD}  ╚══════════════════════════════════════════════════╝${RESET}"
     echo ""
   }
 
-  # Leer teclas
   while true; do
     draw_menu
     IFS= read -rsn1 key
@@ -256,24 +337,15 @@ show_menu_bash() {
       $'\x1b[A'|k) ((cursor > 0)) && ((cursor--)) || true ;;
       $'\x1b[B'|j) ((cursor < count-1)) && ((cursor++)) || true ;;
       ' ')
-        if [[ ${state[$cursor]} -eq 1 ]]; then
-          state[$cursor]=0
-        else
-          state[$cursor]=1
-        fi
+        [[ ${state[$cursor]} -eq 1 ]] && state[$cursor]=0 || state[$cursor]=1
         ;;
       a|A)
         local any_off=0
         for s in "${state[@]}"; do [[ $s -eq 0 ]] && any_off=1 && break; done
-        if [[ $any_off -eq 1 ]]; then
-          for ((i=0; i<count; i++)); do state[$i]=1; done
-        else
-          for ((i=0; i<count; i++)); do state[$i]=0; done
-        fi
+        local new_val; [[ $any_off -eq 1 ]] && new_val=1 || new_val=0
+        for ((i=0; i<count; i++)); do state[$i]=$new_val; done
         ;;
-      ''|$'\n')
-        break
-        ;;
+      ''|$'\n') break ;;
     esac
   done
 
@@ -287,13 +359,13 @@ show_menu_bash() {
 show_menu_whiptail() {
   local options=()
   for tool in "${TOOLS_ALL[@]}"; do
-    options+=("$tool" "" "ON")
+    options+=("$tool" "$(tool_desc "$tool")" "ON")
   done
 
   local result
-  result=$(whiptail --title "k8s-setup" \
-    --checklist "Seleccionar herramientas a instalar:\n(SPACE para toggle, ENTER para confirmar)" \
-    20 60 "${#TOOLS_ALL[@]}" \
+  result=$(whiptail --title " ⎈  k8s-setup — Herramientas Kubernetes" \
+    --checklist "Seleccionar con SPACE, confirmar con ENTER:" \
+    20 65 "${#TOOLS_ALL[@]}" \
     "${options[@]}" \
     3>&1 1>&2 2>&3) || die "Instalación cancelada."
 

@@ -1,0 +1,13 @@
+# Temporales de prueba
+*.tmp
+*.log
+test-output/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
